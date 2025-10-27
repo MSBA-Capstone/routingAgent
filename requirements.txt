@@ -1,0 +1,9 @@
+agentpro @ git+https://github.com/traversaal-ai/AgentPro.git
+langchain-community==0.4
+langchain-text-splitters==1.0.0 
+fastapi==0.119.0
+python-dotenv==1.1.1
+uvicorn==0.38.0
+scikit-learn
+numpy
+annoy
