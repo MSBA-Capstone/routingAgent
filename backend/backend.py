@@ -2,6 +2,10 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from backend.baseAgent import BaseAgent
+from backend.agent_prompts import AGENT_PROMPTS
+from backend.tools.geocoding_tool import GeocodingTool
+from backend.tools.directions_tool import DirectionsTool
+from backend.tools.linkup_tool import LinkupTool
 
 import os
 
@@ -38,28 +42,26 @@ async def run_query(request: Request):
     history = data.get("history", [])
     query = f"User Input: {userInput}\nConversation History: {history}"
     # create a fresh agent for this request
-    local_agent = BaseAgent()
+    local_agent = BaseAgent(
+        custom_system_prompt=AGENT_PROMPTS["route_sanity_check"],
+        tools=[GeocodingTool(), DirectionsTool()],
+        max_iterations=10
+    )
+    response = local_agent.agent.run(query)
+    continue_flag = "The route is not feasible" not in response.final_answer
+    return {"answer": response.final_answer, "continue": continue_flag}
+
+@app.post("/utility_itinerary")
+async def create_utility_itinerary(request: Request):
+    data = await request.json()
+    userInput = data.get("query", "")
+    history = data.get("history", [])
+    query = f"User Input: {userInput}\nConversation History: {history}"
+    # create a fresh agent for this request
+    local_agent = BaseAgent(
+        custom_system_prompt=AGENT_PROMPTS["utility_focused_itinerary"],
+        tools=[GeocodingTool(), DirectionsTool(), LinkupTool()],
+        max_iterations=30
+    )
     response = local_agent.agent.run(query)
     return {"answer": response.final_answer}
-
-# # Endpoint to add a new cat fact and update RAG index
-# @app.post("/add_fact")
-# async def add_fact(request: Request):
-#     data = await request.json()
-#     fact = data.get("fact", "").strip()
-#     if not fact:
-#         return {"success": False, "error": "No fact provided."}
-#     # Append fact to cat-facts.txt
-#     facts_path = os.path.join(os.path.dirname(__file__), "..", "RAG", "cat-facts.txt")
-#     try:
-#         with open(facts_path, "a", encoding="utf-8") as f:
-#             f.write(fact + "\n")
-#     except Exception as e:
-#         return {"success": False, "error": str(e)}
-#     # Rebuild RAG index
-#     try:
-#         from RAG.ragInit import build_index
-#         build_index()
-#     except Exception as e:
-#         return {"success": False, "error": "Fact added, but failed to rebuild index: " + str(e)}
-#     return {"success": True, "message": "Fact added and RAG index updated."}

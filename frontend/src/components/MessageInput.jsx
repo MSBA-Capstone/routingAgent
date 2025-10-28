@@ -1,4 +1,16 @@
-function MessageInput({ input, setInput, onSubmit, loading, editingMessageId, onCancelEdit }) {
+function MessageInput({ input, setInput, onSubmit, loading, editingMessageId, onCancelEdit, options }) {
+  if (options && !editingMessageId) {
+    return (
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        {options.map(option => (
+          <button key={option} type="button" onClick={() => onSubmit(option)} disabled={loading} style={{ padding: '10px 16px', fontSize: 16, borderRadius: 6, background: '#ff9800', color: '#fff', border: 'none', cursor: 'pointer' }}>
+            {option}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={onSubmit} style={{ display: 'flex', gap: 8, marginTop: 12 }}>
       <input

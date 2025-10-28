@@ -1,4 +1,5 @@
-import React from 'react';
+  import React from 'react';
+import ReactMarkdown from 'react-markdown';
 import TypingIndicator from './TypingIndicator';
 
 function ChatBubble({ message, onRetry, onEdit, isLatestAssistant }) {
@@ -20,6 +21,8 @@ function ChatBubble({ message, onRetry, onEdit, isLatestAssistant }) {
   // Render typing indicator inside the assistant bubble when placeholder used
   const content = message.text === '...' && message.role === 'assistant'
     ? <TypingIndicator />
+    : message.role === 'assistant'
+    ? <ReactMarkdown>{message.text}</ReactMarkdown>
     : message.text;
 
   return (

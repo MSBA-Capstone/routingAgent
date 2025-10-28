@@ -26,6 +26,7 @@ class BaseAgent:
         api_key: Optional[str] = None,
         tools: Optional[Sequence] = None,
         custom_system_prompt: Optional[str] = None,
+        max_iterations: Optional[int] = 20
     ) -> None:
         if api_key is None:
             api_key = os.getenv("OPENAI_API_KEY", None)
@@ -34,7 +35,7 @@ class BaseAgent:
         self.tools = list(tools) if tools is not None else []
         self.agent = ReactAgent(model=self.model,
                                 tools=self.tools,
-                                max_iterations=10,
+                                max_iterations=max_iterations,
                                 custom_system_prompt=custom_system_prompt)
 
 

@@ -5,6 +5,7 @@ import PasswordScreen from './components/PasswordScreen';
 import ChatWindow from './components/ChatWindow';
 import MessageInput from './components/MessageInput';
 import TypingIndicator from './components/TypingIndicator';
+import { GUIDED_FLOW, GUIDED_FLOW_COMPLETE_MESSAGE } from './guidedFlow';
 
 // Use VITE_API_BASE_URL for API calls
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -17,28 +18,36 @@ function App() {
   const [editingMessageId, setEditingMessageId] = useState(null);
   const scrollRef = useRef(null);
 
-  useEffect(() => {
-    if (authenticated) {
-      // welcome message
-      setMessages([{ id: 'welcome', role: 'assistant', text: 'Hi! I am your Cat RAG assistant. I will guide you through a few questions.' }]);
-      // start guided flow automatically (GUIDED_QUESTIONS is a constant defined next to hooks so it's stable)
-      setGuidedMode(true);
-      setCurrentQuestionIndex(0);
-      const q0 = GUIDED_QUESTIONS[0];
-      if (q0) setMessages(prev => [...prev, { id: `g-${q0.id}`, role: 'assistant', text: q0.question }]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authenticated]);
-
-  // Pre-determined guided questions. Each question maps to an endpoint and a payload key
-  const GUIDED_QUESTIONS = [
-    { id: 'q1', question: 'What is your name?', endpoint: '/query', payloadKey: 'query' },
-    { id: 'q2', question: 'Tell me a cat fact you want to add to our dataset.', endpoint: '/query', payloadKey: 'query' },
-    { id: 'q3', question: 'Any additional notes or context?', endpoint: '/query', payloadKey: 'query' }
-  ];
-
   const [guidedMode, setGuidedMode] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [guidedAnswers, setGuidedAnswers] = useState({});
+  const guidedAnswersRef = useRef(guidedAnswers);
+
+  useEffect(() => {
+    guidedAnswersRef.current = guidedAnswers;
+  }, [guidedAnswers]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const firstQuestion = GUIDED_FLOW[0];
+    const initialMessages = [
+      { id: 'welcome', role: 'assistant', text: 'Hi! I am your Road Trip assistant. I will guide you through a few questions.' },
+    ];
+
+    if (firstQuestion) {
+      initialMessages.push({ id: `g-${firstQuestion.id}-0`, role: 'assistant', text: firstQuestion.prompt });
+      setGuidedMode(true);
+      setCurrentQuestionIndex(0);
+    } else {
+      setGuidedMode(false);
+      setCurrentQuestionIndex(0);
+    }
+
+    guidedAnswersRef.current = {};
+    setGuidedAnswers({});
+    setMessages(initialMessages);
+  }, [authenticated]);
 
   useEffect(() => {
     // auto-scroll to bottom on new messages
@@ -46,6 +55,52 @@ function App() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  const finishFlow = () => {
+    setGuidedMode(false);
+    setCurrentQuestionIndex(GUIDED_FLOW.length);
+    setMessages(prev => {
+      const alreadyComplete = prev.some(m => m.meta === 'guided-complete');
+      if (alreadyComplete) {
+        return prev;
+      }
+      return [
+        ...prev,
+      ];
+    });
+  };
+
+  const promptQuestion = (index, options = {}) => {
+    const question = GUIDED_FLOW[index];
+    if (!question) {
+      finishFlow();
+      return;
+    }
+
+    const { repeat = false } = options;
+    const text = repeat && question.repeatPrompt ? question.repeatPrompt : question.prompt;
+
+    setMessages(prev => [
+      ...prev,
+      {
+        id: `g-${question.id}-${Date.now()}`,
+        role: 'assistant',
+        text,
+      },
+    ]);
+    setGuidedMode(true);
+    setCurrentQuestionIndex(index);
+  };
+
+  const storeGuidedAnswer = (key, value) => {
+    if (!key) {
+      return guidedAnswersRef.current;
+    }
+    const next = { ...guidedAnswersRef.current, [key]: value };
+    guidedAnswersRef.current = next;
+    setGuidedAnswers(next);
+    return next;
+  };
 
   // helper to post query and update a placeholder assistant message
   const postQuery = async (queryText, placeholderId) => {
@@ -67,56 +122,100 @@ function App() {
   };
 
   // Send guided answer to the question-specific endpoint
-  const sendGuidedAnswer = async (text, question, replaceUserId) => {
+  const sendGuidedAnswer = async (text, question, questionIndex, replaceUserId) => {
     if (!question) return;
-    const qId = question.id;
+    const trimmed = text.trim();
+    if (!trimmed) return;
 
     let userMsgId = replaceUserId;
-    if (!replaceUserId) {
-      userMsgId = `u-${Date.now()}-${Math.random()}`;
-      const userMsg = { id: userMsgId, role: 'user', text };
-      setMessages(prev => [...prev, userMsg]);
+    if (replaceUserId) {
+      setMessages(prev => prev.map(m => (m.id === replaceUserId ? { ...m, text: trimmed } : m)));
     } else {
-      setMessages(prev => prev.map(m => (m.id === replaceUserId ? { ...m, text } : m)));
+      userMsgId = `u-${Date.now()}-${Math.random()}`;
+      const userMsg = { id: userMsgId, role: 'user', text: trimmed };
+      setMessages(prev => [...prev, userMsg]);
     }
 
     setInput("");
+    const storageKey = question.storageKey || question.payloadKey || question.id;
+    const answersAfterStore = storeGuidedAnswer(storageKey, trimmed);
+
+    const ackText = question.acknowledgement;
+    if (ackText) {
+      setMessages(prev => [
+        ...prev,
+        { id: `g-ack-${question.id}-${Date.now()}`, role: 'assistant', text: ackText },
+      ]);
+    }
+
+    if (question.mode !== 'api') {
+      setLoading(false);
+      const nextIndex = questionIndex + 1;
+      if (nextIndex < GUIDED_FLOW.length) {
+        promptQuestion(nextIndex);
+      } else {
+        finishFlow();
+      }
+      return;
+    }
+
     setLoading(true);
 
     const placeholderId = `a-${Date.now()}-${Math.random()}`;
-    setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', text: '...', request: text, inReplyTo: userMsgId }]);
+    let historyMessages = [];
+    setMessages(prev => {
+      const updated = [
+        ...prev,
+        { id: placeholderId, role: 'assistant', text: '...', request: trimmed, inReplyTo: userMsgId },
+      ];
+      historyMessages = updated;
+      return updated;
+    });
 
-  // build the request body using payloadKey and include conversation history
-  const payloadKey = question.payloadKey || 'response';
-  const history = messages.map(m => ({ id: m.id, role: m.role, text: m.text }));
-  const body = { [payloadKey]: text, questionId: qId, history };
+    const history = historyMessages.map(m => ({ id: m.id, role: m.role, text: m.text }));
+    const body = question.buildPayload
+      ? question.buildPayload({ answers: answersAfterStore, currentAnswer: trimmed, history })
+      : {
+          [question.payloadKey || 'response']: trimmed,
+          history,
+          questionId: question.id,
+          answers: answersAfterStore,
+        };
 
     try {
       const res = await fetch(`${API_BASE_URL}${question.endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
       const data = await res.json();
-      // attempt to prefer common keys
-      const answer = data.answer || data.message || data.result || data.success && data.message || 'No answer returned.';
-      setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: answer } : m)));
+      const parsed = question.parseResponse
+        ? question.parseResponse(data)
+        : {
+            answer: data.answer || data.message || 'No answer returned.',
+            continueFlow: data.continue !== false,
+          };
+      const answerText = parsed.answer ?? 'No answer returned.';
+      const shouldContinue = parsed.continueFlow !== false;
+      setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: answerText } : m)));
+      setLoading(false);
+
+      if (!shouldContinue) {
+        const targetIndex = question.repeatIndex !== undefined ? question.repeatIndex : questionIndex;
+        promptQuestion(targetIndex, { repeat: question.repeatIndex === undefined });
+        return;
+      }
+
+      const nextIndex = questionIndex + 1;
+      if (nextIndex < GUIDED_FLOW.length) {
+        promptQuestion(nextIndex);
+      } else {
+        finishFlow();
+      }
     } catch (err) {
       setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: 'Error: ' + err.message } : m)));
-    }
-
-    setLoading(false);
-
-    // advance to next question if available
-    const nextIndex = Math.min(currentQuestionIndex + 1, GUIDED_QUESTIONS.length);
-    if (nextIndex < GUIDED_QUESTIONS.length) {
-      const nextQ = GUIDED_QUESTIONS[nextIndex];
-      setCurrentQuestionIndex(nextIndex);
-      setMessages(prev => [...prev, { id: `g-${nextQ.id}`, role: 'assistant', text: nextQ.question }]);
-    } else {
-      // finished
-      setGuidedMode(false);
-      setMessages(prev => [...prev, { id: `g-done`, role: 'assistant', text: 'Thanks — that completes the guided questions.' }]);
+      setLoading(false);
+      promptQuestion(questionIndex, { repeat: true });
     }
   };
 
@@ -144,32 +243,43 @@ function App() {
     await postQuery(text, placeholderId);
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = (e, overrideText) => {
+    let text;
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+      text = overrideText || input;
+    } else {
+      text = e || input;  // e is the overrideText when called from button
+    }
     if (loading) return;
+    setInput("");
     if (editingMessageId) {
       // find index of the user message we're editing and truncate messages to that point
       const idx = messages.findIndex(m => m.id === editingMessageId && m.role === 'user');
       if (idx !== -1) {
-        const before = messages.slice(0, idx + 1).map(m => (m.id === editingMessageId ? { ...m, text: input } : m));
+        const before = messages.slice(0, idx + 1).map(m => (m.id === editingMessageId ? { ...m, text: text } : m));
         setMessages(before);
         // send updated message and replace the existing user message
         if (guidedMode) {
-          // when editing during guided flow, re-run the endpoint for the current question
-          const q = GUIDED_QUESTIONS[currentQuestionIndex] || GUIDED_QUESTIONS[GUIDED_QUESTIONS.length - 1];
-          sendGuidedAnswer(input, q, editingMessageId);
+          // when editing during guided flow, re-run the handler for the active question
+          const maxIndex = GUIDED_FLOW.length > 0 ? GUIDED_FLOW.length - 1 : 0;
+          const qIndex = currentQuestionIndex < GUIDED_FLOW.length ? currentQuestionIndex : maxIndex;
+          const q = GUIDED_FLOW[qIndex];
+          if (q) {
+            sendGuidedAnswer(text, q, qIndex, editingMessageId);
+          }
         } else {
-          sendMessage(input, { replaceUserId: editingMessageId });
+          sendMessage(text, { replaceUserId: editingMessageId });
         }
       }
       setEditingMessageId(null);
     } else {
       if (guidedMode) {
         // submit answer to current guided question
-        const q = GUIDED_QUESTIONS[currentQuestionIndex];
-        if (q) sendGuidedAnswer(input, q);
+        const q = GUIDED_FLOW[currentQuestionIndex];
+        if (q) sendGuidedAnswer(text, q, currentQuestionIndex);
       } else {
-        sendMessage(input);
+        sendMessage(text);
       }
     }
   };
@@ -202,11 +312,11 @@ function App() {
 
   return (
     <div className="app-container" style={{ maxWidth: 700, margin: '24px auto', padding: 18, background: 'var(--card-bg)', borderRadius: 12, boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column', height: '80vh' }}>
-      <h1 style={{ textAlign: 'center', marginBottom: 8 }}>🐾 Cat RAG Chat</h1>
+       <h1 style={{ textAlign: 'center', marginBottom: 8 }}>🗺️ Trip Planning Assistant</h1>
 
   <ChatWindow messages={messages} scrollRef={scrollRef} onRetry={handleRetry} onEdit={handleEdit} />
 
-  <MessageInput input={input} setInput={setInput} onSubmit={handleSubmit} loading={loading} editingMessageId={editingMessageId} onCancelEdit={handleCancelEdit} />
+  <MessageInput input={input} setInput={setInput} onSubmit={handleSubmit} loading={loading} editingMessageId={editingMessageId} onCancelEdit={handleCancelEdit} options={guidedMode ? GUIDED_FLOW[currentQuestionIndex]?.options : null} />
 
       {/* Thinking status while waiting for assistant */}
       {loading && (
