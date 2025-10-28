@@ -1,7 +1,7 @@
 # agent_backend.py
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from backend.baseAgent import agent
+from backend.baseAgent import BaseAgent
 
 import os
 
@@ -16,7 +16,9 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Agent initialized in backend/agent.py and imported above
+# Each API endpoint will create its own BaseAgent instance to avoid
+# sharing state between requests.
+
 
 @app.post("/validate_password")
 async def validate_password(request: Request):
@@ -29,33 +31,35 @@ async def validate_password(request: Request):
         return {"success": True}
     return {"success": False}
 
-@app.post("/query")
+@app.post("/init")
 async def run_query(request: Request):
     data = await request.json()
     userInput = data.get("query", "")
     history = data.get("history", [])
     query = f"User Input: {userInput}\nConversation History: {history}"
-    response = agent.run(query)
+    # create a fresh agent for this request
+    local_agent = BaseAgent()
+    response = local_agent.agent.run(query)
     return {"answer": response.final_answer}
 
-# Endpoint to add a new cat fact and update RAG index
-@app.post("/add_fact")
-async def add_fact(request: Request):
-    data = await request.json()
-    fact = data.get("fact", "").strip()
-    if not fact:
-        return {"success": False, "error": "No fact provided."}
-    # Append fact to cat-facts.txt
-    facts_path = os.path.join(os.path.dirname(__file__), "..", "RAG", "cat-facts.txt")
-    try:
-        with open(facts_path, "a", encoding="utf-8") as f:
-            f.write(fact + "\n")
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-    # Rebuild RAG index
-    try:
-        from RAG.ragInit import build_index
-        build_index()
-    except Exception as e:
-        return {"success": False, "error": "Fact added, but failed to rebuild index: " + str(e)}
-    return {"success": True, "message": "Fact added and RAG index updated."}
+# # Endpoint to add a new cat fact and update RAG index
+# @app.post("/add_fact")
+# async def add_fact(request: Request):
+#     data = await request.json()
+#     fact = data.get("fact", "").strip()
+#     if not fact:
+#         return {"success": False, "error": "No fact provided."}
+#     # Append fact to cat-facts.txt
+#     facts_path = os.path.join(os.path.dirname(__file__), "..", "RAG", "cat-facts.txt")
+#     try:
+#         with open(facts_path, "a", encoding="utf-8") as f:
+#             f.write(fact + "\n")
+#     except Exception as e:
+#         return {"success": False, "error": str(e)}
+#     # Rebuild RAG index
+#     try:
+#         from RAG.ragInit import build_index
+#         build_index()
+#     except Exception as e:
+#         return {"success": False, "error": "Fact added, but failed to rebuild index: " + str(e)}
+#     return {"success": True, "message": "Fact added and RAG index updated."}
