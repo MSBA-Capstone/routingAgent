@@ -1,171 +1,219 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import './App.css';
+
+import PasswordScreen from './components/PasswordScreen';
+import ChatWindow from './components/ChatWindow';
+import MessageInput from './components/MessageInput';
+import TypingIndicator from './components/TypingIndicator';
+
 // Use VITE_API_BASE_URL for API calls
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-function PasswordScreen({ onSuccess }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch(`${API_BASE_URL}/validate_password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
-      const data = await res.json();
-      if (data.success) {
-        onSuccess();
-      } else {
-        setError("Invalid password.");
-      }
-    } catch (err) {
-      setError("Error: " + err.message);
-    }
-    setLoading(false);
-  };
-
-  return (
-    <div className="app-container" style={{ maxWidth: 400, margin: '80px auto', padding: 24, background: 'var(--card-bg)', borderRadius: 12, boxShadow: 'var(--shadow)' }}>
-      <h2 style={{ textAlign: 'center', marginBottom: 16 }}>🔒 Enter Access Password</h2>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <input
-          type="password"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          placeholder="Password"
-          style={{ padding: 10, fontSize: 16, borderRadius: 6, background: 'var(--input-bg)', color: 'var(--text)', border: '1px solid var(--input-border)' }}
-          disabled={loading}
-        />
-        <button type="submit" disabled={loading || !password.trim()} style={{ padding: '10px 0', fontSize: 16, borderRadius: 6, background: '#1976d2', color: '#fff', border: 'none', cursor: 'pointer' }}>
-          {loading ? "Validating..." : "Enter"}
-        </button>
-      </form>
-      {error && <div style={{ textAlign: 'center', color: '#d32f2f', marginTop: 12 }}>{error}</div>}
-    </div>
-  );
-}
-import './App.css';
-
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
-  const [query, setQuery] = useState("");
-  const [response, setResponse] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [catImg, setCatImg] = useState("");
-  const [fact, setFact] = useState("");
-  const [factStatus, setFactStatus] = useState("");
-
-  // Fetch a random cat image
-  const fetchCatImg = async () => {
-    try {
-      const res = await fetch('https://api.thecatapi.com/v1/images/search');
-      const data = await res.json();
-      setCatImg(data[0]?.url || "");
-    } catch {
-      setCatImg("");
-    }
-  };
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const scrollRef = useRef(null);
 
   useEffect(() => {
-    if (authenticated) fetchCatImg();
+    if (authenticated) {
+      // welcome message
+      setMessages([{ id: 'welcome', role: 'assistant', text: 'Hi! I am your Cat RAG assistant. I will guide you through a few questions.' }]);
+      // start guided flow automatically (GUIDED_QUESTIONS is a constant defined next to hooks so it's stable)
+      setGuidedMode(true);
+      setCurrentQuestionIndex(0);
+      const q0 = GUIDED_QUESTIONS[0];
+      if (q0) setMessages(prev => [...prev, { id: `g-${q0.id}`, role: 'assistant', text: q0.question }]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setResponse("");
-    await fetchCatImg(); // update cat image on each query
+  // Pre-determined guided questions. Each question maps to an endpoint and a payload key
+  const GUIDED_QUESTIONS = [
+    { id: 'q1', question: 'What is your name?', endpoint: '/query', payloadKey: 'query' },
+    { id: 'q2', question: 'Tell me a cat fact you want to add to our dataset.', endpoint: '/query', payloadKey: 'query' },
+    { id: 'q3', question: 'Any additional notes or context?', endpoint: '/query', payloadKey: 'query' }
+  ];
+
+  const [guidedMode, setGuidedMode] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+
+  useEffect(() => {
+    // auto-scroll to bottom on new messages
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  // helper to post query and update a placeholder assistant message
+  const postQuery = async (queryText, placeholderId) => {
     try {
+      // include conversation history with the request
+      const history = messages.map(m => ({ id: m.id, role: m.role, text: m.text }));
       const res = await fetch(`${API_BASE_URL}/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query })
+        body: JSON.stringify({ query: queryText, history })
       });
       const data = await res.json();
-      setResponse(data.answer || "No answer returned.");
+      const answer = data.answer || 'No answer returned.';
+      setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: answer } : m)));
     } catch (err) {
-      setResponse("Error: " + err.message);
+      setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: 'Error: ' + err.message } : m)));
     }
     setLoading(false);
   };
 
-  // Add new cat fact
-  const handleAddFact = async (e) => {
-    e.preventDefault();
-    setFactStatus("");
-    if (!fact.trim()) {
-      setFactStatus("Please enter a cat fact.");
-      return;
+  // Send guided answer to the question-specific endpoint
+  const sendGuidedAnswer = async (text, question, replaceUserId) => {
+    if (!question) return;
+    const qId = question.id;
+
+    let userMsgId = replaceUserId;
+    if (!replaceUserId) {
+      userMsgId = `u-${Date.now()}-${Math.random()}`;
+      const userMsg = { id: userMsgId, role: 'user', text };
+      setMessages(prev => [...prev, userMsg]);
+    } else {
+      setMessages(prev => prev.map(m => (m.id === replaceUserId ? { ...m, text } : m)));
     }
+
+    setInput("");
+    setLoading(true);
+
+    const placeholderId = `a-${Date.now()}-${Math.random()}`;
+    setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', text: '...', request: text, inReplyTo: userMsgId }]);
+
+  // build the request body using payloadKey and include conversation history
+  const payloadKey = question.payloadKey || 'response';
+  const history = messages.map(m => ({ id: m.id, role: m.role, text: m.text }));
+  const body = { [payloadKey]: text, questionId: qId, history };
+
     try {
-      const res = await fetch(`${API_BASE_URL}/add_fact`, {
+      const res = await fetch(`${API_BASE_URL}${question.endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fact })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
-      if (data.success) {
-        setFactStatus("✅ " + data.message);
-        setFact("");
-      } else {
-        setFactStatus("❌ " + (data.error || "Unknown error."));
-      }
+      // attempt to prefer common keys
+      const answer = data.answer || data.message || data.result || data.success && data.message || 'No answer returned.';
+      setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: answer } : m)));
     } catch (err) {
-      setFactStatus("❌ Error: " + err.message);
+      setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: 'Error: ' + err.message } : m)));
+    }
+
+    setLoading(false);
+
+    // advance to next question if available
+    const nextIndex = Math.min(currentQuestionIndex + 1, GUIDED_QUESTIONS.length);
+    if (nextIndex < GUIDED_QUESTIONS.length) {
+      const nextQ = GUIDED_QUESTIONS[nextIndex];
+      setCurrentQuestionIndex(nextIndex);
+      setMessages(prev => [...prev, { id: `g-${nextQ.id}`, role: 'assistant', text: nextQ.question }]);
+    } else {
+      // finished
+      setGuidedMode(false);
+      setMessages(prev => [...prev, { id: `g-done`, role: 'assistant', text: 'Thanks — that completes the guided questions.' }]);
     }
   };
 
+  const sendMessage = async (text, opts = {}) => {
+    if (!text.trim()) return;
+    const { replaceUserId } = opts;
+
+    let userMsgId = replaceUserId;
+    if (!replaceUserId) {
+      userMsgId = `u-${Date.now()}-${Math.random()}`;
+      const userMsg = { id: userMsgId, role: 'user', text };
+      setMessages(prev => [...prev, userMsg]);
+    } else {
+      // update existing user message text
+      setMessages(prev => prev.map(m => (m.id === replaceUserId ? { ...m, text } : m)));
+    }
+
+    setInput("");
+    setLoading(true);
+
+    const placeholderId = `a-${Date.now()}-${Math.random()}`;
+    // store original request on the assistant message so Retry can re-use it
+    setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', text: '...', request: text, inReplyTo: userMsgId }]);
+
+    await postQuery(text, placeholderId);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (loading) return;
+    if (editingMessageId) {
+      // find index of the user message we're editing and truncate messages to that point
+      const idx = messages.findIndex(m => m.id === editingMessageId && m.role === 'user');
+      if (idx !== -1) {
+        const before = messages.slice(0, idx + 1).map(m => (m.id === editingMessageId ? { ...m, text: input } : m));
+        setMessages(before);
+        // send updated message and replace the existing user message
+        if (guidedMode) {
+          // when editing during guided flow, re-run the endpoint for the current question
+          const q = GUIDED_QUESTIONS[currentQuestionIndex] || GUIDED_QUESTIONS[GUIDED_QUESTIONS.length - 1];
+          sendGuidedAnswer(input, q, editingMessageId);
+        } else {
+          sendMessage(input, { replaceUserId: editingMessageId });
+        }
+      }
+      setEditingMessageId(null);
+    } else {
+      if (guidedMode) {
+        // submit answer to current guided question
+        const q = GUIDED_QUESTIONS[currentQuestionIndex];
+        if (q) sendGuidedAnswer(input, q);
+      } else {
+        sendMessage(input);
+      }
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setInput("");
+  };
+
+  // Retry handler for assistant responses
+  const handleRetry = async (assistantMsg) => {
+    if (loading) return;
+    const req = assistantMsg.request;
+    if (!req) return;
+    setLoading(true);
+    // set assistant message back to placeholder
+    setMessages(prev => prev.map(m => (m.id === assistantMsg.id ? { ...m, text: '...' } : m)));
+    await postQuery(req, assistantMsg.id);
+  };
+
+  // Edit handler for user messages
+  const handleEdit = (userMsg) => {
+    setEditingMessageId(userMsg.id);
+    setInput(userMsg.text);
+  };
+
   if (!authenticated) {
-    return <PasswordScreen onSuccess={() => setAuthenticated(true)} />;
+    return <PasswordScreen onSuccess={() => setAuthenticated(true)} apiBaseUrl={API_BASE_URL} />;
   }
 
   return (
-    <div className="app-container" style={{ maxWidth: 500, margin: '40px auto', padding: 24, background: 'var(--card-bg)', borderRadius: 12, boxShadow: 'var(--shadow)' }}>
-      <h1 style={{ textAlign: 'center', marginBottom: 16 }}>🐾 Cat RAG Chat</h1>
-      {catImg && (
-        <div style={{ textAlign: 'center', marginBottom: 16 }}>
-          <img src={catImg} alt="Random Cat" style={{ maxWidth: '100%', borderRadius: 8, boxShadow: '0 2px 8px #0002' }} />
+    <div className="app-container" style={{ maxWidth: 700, margin: '24px auto', padding: 18, background: 'var(--card-bg)', borderRadius: 12, boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column', height: '80vh' }}>
+      <h1 style={{ textAlign: 'center', marginBottom: 8 }}>🐾 Cat RAG Chat</h1>
+
+  <ChatWindow messages={messages} scrollRef={scrollRef} onRetry={handleRetry} onEdit={handleEdit} />
+
+  <MessageInput input={input} setInput={setInput} onSubmit={handleSubmit} loading={loading} editingMessageId={editingMessageId} onCancelEdit={handleCancelEdit} />
+
+      {/* Thinking status while waiting for assistant */}
+      {loading && (
+        <div style={{ textAlign: 'center', color: '#666', fontSize: 13, marginTop: 8 }}>
+          Assistant is thinking <TypingIndicator />
         </div>
       )}
-      <form onSubmit={handleSubmit} className="chat-form" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Ask a question about cats..."
-          disabled={loading}
-          className="chat-input"
-          style={{ flex: 1, padding: 10, fontSize: 16, borderRadius: 6, background: 'var(--input-bg)', color: 'var(--text)', border: '1px solid var(--input-border)' }}
-        />
-        <button type="submit" disabled={loading || !query.trim()} style={{ padding: '0 18px', fontSize: 16, borderRadius: 6, background: '#ff9800', color: '#fff', border: 'none', cursor: 'pointer' }}>
-          {loading ? "Loading..." : "Ask"}
-        </button>
-      </form>
-      <div className="chat-response" style={{ background: 'var(--input-bg)', borderRadius: 8, padding: 16, minHeight: 80, color: 'var(--text)' }}>
-        {response && <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{response}</pre>}
-      </div>
-
-      <hr style={{ margin: '32px 0 24px 0', border: 'none', borderTop: '1px solid #eee' }} />
-      <h2 style={{ textAlign: 'center', marginBottom: 12, fontSize: 20 }}>Add Your Own Cat Fact</h2>
-      <form onSubmit={handleAddFact} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <input
-          type="text"
-          value={fact}
-          onChange={e => setFact(e.target.value)}
-          placeholder="Enter a new cat fact..."
-          className="chat-input"
-          style={{ flex: 1, padding: 10, fontSize: 16, borderRadius: 6, background: 'var(--input-bg)', color: 'var(--text)', border: '1px solid var(--input-border)' }}
-        />
-        <button type="submit" style={{ padding: '0 18px', fontSize: 16, borderRadius: 6, background: '#4caf50', color: '#fff', border: 'none', cursor: 'pointer' }}>
-          Add Fact
-        </button>
-      </form>
-      {factStatus && <div style={{ textAlign: 'center', color: factStatus.startsWith('✅') ? '#4caf50' : '#d32f2f', marginBottom: 8 }}>{factStatus}</div>}
     </div>
   );
 }

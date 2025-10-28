@@ -1,9 +1,7 @@
 # agent_backend.py
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from agentpro import ReactAgent, create_model
-from agentpro.tools import AresInternetTool, QuickInternetTool
-from backend.rag_tool import RagTool  # import your custom tool
+from backend.baseAgent import agent
 
 import os
 
@@ -18,14 +16,7 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Initialize model and tools
-model = create_model(provider="openai", model_name="gpt-4.1-nano", api_key=os.getenv("OPENAI_API_KEY", None))
-tools = [
-    # AresInternetTool(os.getenv("ARES_API_KEY", None)),
-    # QuickInternetTool(),
-    RagTool()
-]
-agent = ReactAgent(model=model, tools=tools)
+# Agent initialized in backend/agent.py and imported above
 
 @app.post("/validate_password")
 async def validate_password(request: Request):
@@ -41,7 +32,9 @@ async def validate_password(request: Request):
 @app.post("/query")
 async def run_query(request: Request):
     data = await request.json()
-    query = data.get("query", "")
+    userInput = data.get("query", "")
+    history = data.get("history", [])
+    query = f"User Input: {userInput}\nConversation History: {history}"
     response = agent.run(query)
     return {"answer": response.final_answer}
 
