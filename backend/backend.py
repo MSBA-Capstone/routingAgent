@@ -8,6 +8,8 @@ from backend.tools.directions_tool import DirectionsTool
 from backend.tools.linkup_tool import LinkupTool
 
 import os
+import uuid
+from fastapi import BackgroundTasks
 
 app = FastAPI()
 
@@ -19,6 +21,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+# Each API endpoint will create its own BaseAgent instance to avoid
+# sharing state between requests.
+
+# Global dict to store job statuses (in production, use a database)
+jobs = {}
 
 # Each API endpoint will create its own BaseAgent instance to avoid
 # sharing state between requests.
@@ -52,16 +60,31 @@ async def run_query(request: Request):
     return {"answer": response.final_answer, "continue": continue_flag}
 
 @app.post("/utility_itinerary")
-async def create_utility_itinerary(request: Request):
+async def create_utility_itinerary(request: Request, background_tasks: BackgroundTasks):
     data = await request.json()
     userInput = data.get("query", "")
     history = data.get("history", [])
     query = f"User Input: {userInput}\nConversation History: {history}"
     # create a fresh agent for this request
-    local_agent = BaseAgent(
-        custom_system_prompt=AGENT_PROMPTS["utility_focused_itinerary"],
-        tools=[GeocodingTool(), DirectionsTool(), LinkupTool()],
-        max_iterations=30
-    )
-    response = local_agent.agent.run(query)
-    return {"answer": response.final_answer}
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {"status": "processing", "result": None}
+    background_tasks.add_task(process_utility_itinerary, job_id, query)
+    return {"job_id": job_id}
+
+def process_utility_itinerary(job_id, query):
+    try:
+        local_agent = BaseAgent(
+            custom_system_prompt=AGENT_PROMPTS["utility_focused_itinerary"],
+            tools=[GeocodingTool(), DirectionsTool(), LinkupTool()],
+            max_iterations=30
+        )
+        response = local_agent.agent.run(query)
+        jobs[job_id] = {"status": "completed", "result": {"answer": response.final_answer}}
+    except Exception as e:
+        jobs[job_id] = {"status": "error", "result": str(e)}
+
+@app.get("/job_status/{job_id}")
+async def get_job_status(job_id: str):
+    if job_id not in jobs:
+        return {"status": "not_found"}
+    return jobs[job_id]

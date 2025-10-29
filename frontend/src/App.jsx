@@ -6,6 +6,8 @@ import ChatWindow from './components/ChatWindow';
 import MessageInput from './components/MessageInput';
 import TypingIndicator from './components/TypingIndicator';
 import { GUIDED_FLOW, GUIDED_FLOW_COMPLETE_MESSAGE } from './guidedFlow';
+import { useGuidedFlow } from './hooks/useGuidedFlow';
+import { createMessage, updateMessage, addMessage } from './utils/messageUtils';
 
 // Use VITE_API_BASE_URL for API calls
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -18,36 +20,14 @@ function App() {
   const [editingMessageId, setEditingMessageId] = useState(null);
   const scrollRef = useRef(null);
 
-  const [guidedMode, setGuidedMode] = useState(false);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [guidedAnswers, setGuidedAnswers] = useState({});
-  const guidedAnswersRef = useRef(guidedAnswers);
-
-  useEffect(() => {
-    guidedAnswersRef.current = guidedAnswers;
-  }, [guidedAnswers]);
-
-  useEffect(() => {
-    if (!authenticated) return;
-
-    const firstQuestion = GUIDED_FLOW[0];
-    const initialMessages = [
-      { id: 'welcome', role: 'assistant', text: 'Hi! I am your Road Trip assistant. I will guide you through a few questions.' },
-    ];
-
-    if (firstQuestion) {
-      initialMessages.push({ id: `g-${firstQuestion.id}-0`, role: 'assistant', text: firstQuestion.prompt });
-      setGuidedMode(true);
-      setCurrentQuestionIndex(0);
-    } else {
-      setGuidedMode(false);
-      setCurrentQuestionIndex(0);
-    }
-
-    guidedAnswersRef.current = {};
-    setGuidedAnswers({});
-    setMessages(initialMessages);
-  }, [authenticated]);
+  const {
+    guidedMode,
+    currentQuestionIndex,
+    guidedAnswers,
+    finishFlow,
+    promptQuestion,
+    storeGuidedAnswer,
+  } = useGuidedFlow(authenticated, setMessages);
 
   useEffect(() => {
     // auto-scroll to bottom on new messages
@@ -55,52 +35,6 @@ function App() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
-
-  const finishFlow = () => {
-    setGuidedMode(false);
-    setCurrentQuestionIndex(GUIDED_FLOW.length);
-    setMessages(prev => {
-      const alreadyComplete = prev.some(m => m.meta === 'guided-complete');
-      if (alreadyComplete) {
-        return prev;
-      }
-      return [
-        ...prev,
-      ];
-    });
-  };
-
-  const promptQuestion = (index, options = {}) => {
-    const question = GUIDED_FLOW[index];
-    if (!question) {
-      finishFlow();
-      return;
-    }
-
-    const { repeat = false } = options;
-    const text = repeat && question.repeatPrompt ? question.repeatPrompt : question.prompt;
-
-    setMessages(prev => [
-      ...prev,
-      {
-        id: `g-${question.id}-${Date.now()}`,
-        role: 'assistant',
-        text,
-      },
-    ]);
-    setGuidedMode(true);
-    setCurrentQuestionIndex(index);
-  };
-
-  const storeGuidedAnswer = (key, value) => {
-    if (!key) {
-      return guidedAnswersRef.current;
-    }
-    const next = { ...guidedAnswersRef.current, [key]: value };
-    guidedAnswersRef.current = next;
-    setGuidedAnswers(next);
-    return next;
-  };
 
   // helper to post query and update a placeholder assistant message
   const postQuery = async (queryText, placeholderId) => {
@@ -114,11 +48,46 @@ function App() {
       });
       const data = await res.json();
       const answer = data.answer || 'No answer returned.';
-      setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: answer } : m)));
+      setMessages(prev => updateMessage(prev, placeholderId, { text: answer }));
     } catch (err) {
-      setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: 'Error: ' + err.message } : m)));
+      setMessages(prev => updateMessage(prev, placeholderId, { text: 'Error: ' + err.message }));
     }
     setLoading(false);
+  };
+
+  // Handle successful API response
+  const handleApiSuccess = (data, question, questionIndex, placeholderId) => {
+    const parsed = question.parseResponse
+      ? question.parseResponse(data)
+      : {
+          answer: data.answer || data.message || 'No answer returned.',
+          continueFlow: data.continue !== false,
+        };
+    const answerText = parsed.answer ?? 'No answer returned.';
+    const shouldContinue = parsed.continueFlow !== false;
+
+    setMessages(prev => updateMessage(prev, placeholderId, { text: answerText }));
+    setLoading(false);
+
+    if (!shouldContinue) {
+      const targetIndex = question.repeatIndex !== undefined ? question.repeatIndex : questionIndex;
+      promptQuestion(targetIndex, { repeat: question.repeatIndex === undefined });
+      return;
+    }
+
+    const nextIndex = questionIndex + 1;
+    if (nextIndex < GUIDED_FLOW.length) {
+      promptQuestion(nextIndex);
+    } else {
+      finishFlow();
+    }
+  };
+
+  // Handle API error
+  const handleApiError = (error, question, questionIndex, placeholderId) => {
+    setMessages(prev => updateMessage(prev, placeholderId, { text: 'Error: ' + error.message }));
+    setLoading(false);
+    promptQuestion(questionIndex, { repeat: true });
   };
 
   // Send guided answer to the question-specific endpoint
@@ -127,27 +96,28 @@ function App() {
     const trimmed = text.trim();
     if (!trimmed) return;
 
+    // Handle user message
     let userMsgId = replaceUserId;
     if (replaceUserId) {
-      setMessages(prev => prev.map(m => (m.id === replaceUserId ? { ...m, text: trimmed } : m)));
+      setMessages(prev => updateMessage(prev, replaceUserId, { text: trimmed }));
     } else {
       userMsgId = `u-${Date.now()}-${Math.random()}`;
-      const userMsg = { id: userMsgId, role: 'user', text: trimmed };
-      setMessages(prev => [...prev, userMsg]);
+      const userMsg = createMessage('user', trimmed, { id: userMsgId });
+      setMessages(prev => addMessage(prev, userMsg));
     }
 
     setInput("");
     const storageKey = question.storageKey || question.payloadKey || question.id;
     const answersAfterStore = storeGuidedAnswer(storageKey, trimmed);
 
+    // Add acknowledgement message if present
     const ackText = question.acknowledgement;
     if (ackText) {
-      setMessages(prev => [
-        ...prev,
-        { id: `g-ack-${question.id}-${Date.now()}`, role: 'assistant', text: ackText },
-      ]);
+      const ackMsg = createMessage('assistant', ackText, { id: `g-ack-${question.id}-${Date.now()}` });
+      setMessages(prev => addMessage(prev, ackMsg));
     }
 
+    // Handle non-API questions
     if (question.mode !== 'api') {
       setLoading(false);
       const nextIndex = questionIndex + 1;
@@ -161,18 +131,17 @@ function App() {
 
     setLoading(true);
 
+    // Create placeholder for assistant response
     const placeholderId = `a-${Date.now()}-${Math.random()}`;
-    let historyMessages = [];
-    setMessages(prev => {
-      const updated = [
-        ...prev,
-        { id: placeholderId, role: 'assistant', text: '...', request: trimmed, inReplyTo: userMsgId },
-      ];
-      historyMessages = updated;
-      return updated;
+    const placeholderMsg = createMessage('assistant', '...', {
+      id: placeholderId,
+      request: trimmed,
+      inReplyTo: userMsgId
     });
+    setMessages(prev => addMessage(prev, placeholderMsg));
 
-    const history = historyMessages.map(m => ({ id: m.id, role: m.role, text: m.text }));
+    // Prepare request body
+    const history = [...messages, placeholderMsg].map(m => ({ id: m.id, role: m.role, text: m.text }));
     const body = question.buildPayload
       ? question.buildPayload({ answers: answersAfterStore, currentAnswer: trimmed, history })
       : {
@@ -189,34 +158,48 @@ function App() {
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      const parsed = question.parseResponse
-        ? question.parseResponse(data)
-        : {
-            answer: data.answer || data.message || 'No answer returned.',
-            continueFlow: data.continue !== false,
-          };
-      const answerText = parsed.answer ?? 'No answer returned.';
-      const shouldContinue = parsed.continueFlow !== false;
-      setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: answerText } : m)));
-      setLoading(false);
 
-      if (!shouldContinue) {
-        const targetIndex = question.repeatIndex !== undefined ? question.repeatIndex : questionIndex;
-        promptQuestion(targetIndex, { repeat: question.repeatIndex === undefined });
-        return;
-      }
-
-      const nextIndex = questionIndex + 1;
-      if (nextIndex < GUIDED_FLOW.length) {
-        promptQuestion(nextIndex);
+      if (question.endpoint === "/utility_itinerary") {
+        handleUtilityItineraryResponse(data, question, questionIndex, placeholderId);
       } else {
-        finishFlow();
+        handleApiSuccess(data, question, questionIndex, placeholderId);
       }
     } catch (err) {
-      setMessages(prev => prev.map(m => (m.id === placeholderId ? { ...m, text: 'Error: ' + err.message } : m)));
-      setLoading(false);
-      promptQuestion(questionIndex, { repeat: true });
+      handleApiError(err, question, questionIndex, placeholderId);
     }
+  };
+
+  // Handle utility itinerary response with polling
+  const handleUtilityItineraryResponse = (data, question, questionIndex, placeholderId) => {
+    const job_id = data.job_id;
+    const pollInterval = setInterval(async () => {
+      try {
+        const statusRes = await fetch(`${API_BASE_URL}/job_status/${job_id}`);
+        const statusData = await statusRes.json();
+        if (statusData.status === "completed") {
+          clearInterval(pollInterval);
+          const answerText = statusData.result.answer ?? 'No answer returned.';
+          setMessages(prev => updateMessage(prev, placeholderId, { text: answerText }));
+          setLoading(false);
+          const nextIndex = questionIndex + 1;
+          if (nextIndex < GUIDED_FLOW.length) {
+            promptQuestion(nextIndex);
+          } else {
+            finishFlow();
+          }
+        } else if (statusData.status === "error") {
+          clearInterval(pollInterval);
+          setMessages(prev => updateMessage(prev, placeholderId, { text: 'Error: ' + statusData.result }));
+          setLoading(false);
+          promptQuestion(questionIndex, { repeat: true });
+        }
+      } catch (pollErr) {
+        clearInterval(pollInterval);
+        setMessages(prev => updateMessage(prev, placeholderId, { text: 'Error polling status: ' + pollErr.message }));
+        setLoading(false);
+        promptQuestion(questionIndex, { repeat: true });
+      }
+    }, 2000);
   };
 
   const sendMessage = async (text, opts = {}) => {
@@ -226,19 +209,22 @@ function App() {
     let userMsgId = replaceUserId;
     if (!replaceUserId) {
       userMsgId = `u-${Date.now()}-${Math.random()}`;
-      const userMsg = { id: userMsgId, role: 'user', text };
-      setMessages(prev => [...prev, userMsg]);
+      const userMsg = createMessage('user', text, { id: userMsgId });
+      setMessages(prev => addMessage(prev, userMsg));
     } else {
-      // update existing user message text
-      setMessages(prev => prev.map(m => (m.id === replaceUserId ? { ...m, text } : m)));
+      setMessages(prev => updateMessage(prev, replaceUserId, { text }));
     }
 
     setInput("");
     setLoading(true);
 
     const placeholderId = `a-${Date.now()}-${Math.random()}`;
-    // store original request on the assistant message so Retry can re-use it
-    setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', text: '...', request: text, inReplyTo: userMsgId }]);
+    const placeholderMsg = createMessage('assistant', '...', {
+      id: placeholderId,
+      request: text,
+      inReplyTo: userMsgId
+    });
+    setMessages(prev => addMessage(prev, placeholderMsg));
 
     await postQuery(text, placeholderId);
   };
@@ -296,7 +282,7 @@ function App() {
     if (!req) return;
     setLoading(true);
     // set assistant message back to placeholder
-    setMessages(prev => prev.map(m => (m.id === assistantMsg.id ? { ...m, text: '...' } : m)));
+    setMessages(prev => updateMessage(prev, assistantMsg.id, { text: '...' }));
     await postQuery(req, assistantMsg.id);
   };
 
