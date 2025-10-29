@@ -75,10 +75,9 @@ export const GUIDED_FLOW = [
             const routePreference = currentAnswer || 'unknown';
             const query = [
                 `I am planning a road trip from ${from} to ${to}.`,
-                `The trip will last ${duration} days,`,
+                `The trip will last ${duration} days after ${duration} days I must arrive at ${to},`,
                 `and I plan to drive about ${drivingHoursPerDay} hours each day.`,
                 `Regarding hurry: ${routePreference}.`,
-                'Please provide any additional notes or context that would help in planning this route.',
             ].join('\n');
 
             return {
