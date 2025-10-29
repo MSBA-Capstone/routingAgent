@@ -16,20 +16,22 @@ class DirectionsTool(Tool):
         if not access_token:
             return "Error: MAPBOX_ACCESS_TOKEN environment variable not set."
         
-        # Parse input: expect "lon1,lat1;lon2,lat2"
+        # Parse input: expect "lon1,lat1;lon2,lat2;..."
         try:
-            coords = input_text.strip()
-            if ';' not in coords:
-                return "Error: Input must contain two coordinates separated by ';'."
-            start, end = coords.split(';', 1)
-            start_lon, start_lat = map(float, start.split(','))
-            end_lon, end_lat = map(float, end.split(','))
+            coords_str = input_text.strip()
+            coord_pairs = coords_str.split(';')
+            if len(coord_pairs) < 2:
+                return "Error: At least two coordinates are required."
+            coords_list = []
+            for pair in coord_pairs:
+                lon, lat = map(float, pair.split(','))
+                coords_list.append((lon, lat))
         except ValueError:
-            return "Error: Invalid coordinate format. Use 'longitude1,latitude1;longitude2,latitude2'."
+            return "Error: Invalid coordinate format. Use 'longitude1,latitude1;longitude2,latitude2;...'."
         
         # Build the directions URL (v5 API, driving profile)
         profile = "mapbox/driving"
-        coordinates = f"{start_lon},{start_lat};{end_lon},{end_lat}"
+        coordinates = ';'.join(f"{lon},{lat}" for lon, lat in coords_list)
         url = f"https://api.mapbox.com/directions/v5/{profile}/{coordinates}"
         params = {
             "access_token": access_token,
@@ -57,15 +59,16 @@ class DirectionsTool(Tool):
             duration_min = duration_s / 60
             
             # Basic summary
-            summary = f"Route from ({start_lon:.4f}, {start_lat:.4f}) to ({end_lon:.4f}, {end_lat:.4f}): Distance: {distance_km:.2f} km, Duration: {duration_min:.1f} minutes."
+            summary = f"Total route distance: {distance_km:.2f} km, Duration: {duration_min:.1f} minutes."
             
-            # Optionally include legs summary if available
+            # Include legs summary if multiple waypoints
             legs = route.get("legs", [])
-            if legs:
-                leg = legs[0]  # Assuming one leg for simplicity
-                leg_summary = leg.get("summary", "")
-                if leg_summary:
-                    summary += f" Via: {leg_summary}."
+            if len(legs) > 1:
+                summary += "\nLeg details:"
+                for i, leg in enumerate(legs):
+                    leg_distance = leg.get("distance", 0) / 1000
+                    leg_duration = leg.get("duration", 0) / 60
+                    summary += f"\n  Leg {i+1}: {leg_distance:.2f} km, {leg_duration:.1f} min"
             
             return summary
         

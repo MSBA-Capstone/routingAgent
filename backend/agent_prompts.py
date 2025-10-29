@@ -16,8 +16,8 @@ AGENT_PROMPTS = {
         You will use this information to create a detailed itinerary that optimizes for
         efficiency and practicality.
         First use the linkup tool to research suitable overnight cities given the user's route, number of days, and maximum driving hours.
-        Then use the geocoding tool to convert addresses to coordinates,
-        and the directions tool to get route distance and duration between coordinates.
+        Then use the geocoding tool to convert addresses to coordinates, you can pass in multiple addresses in one request to be more efficient.
+        Then use the directions tool to get route distance and duration between coordinates.
         Directions tool can handle up to 25 coordinates in one request to be more efficient.
         Your itinerary should minimize unnecessary detours, focusing on the most direct and time-effective route.
         Provide clear driving instructions, estimated travel times, and suggested safe cities to stay overnight if needed.
