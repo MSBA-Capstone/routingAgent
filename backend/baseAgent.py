@@ -22,7 +22,7 @@ class BaseAgent:
     def __init__(
         self,
         provider: str = "openai",
-        model_name: str = "gpt-4.1-nano",
+        model_name: str = "gpt-5-nano",
         api_key: Optional[str] = None,
         tools: Optional[Sequence] = None,
         custom_system_prompt: Optional[str] = None,
@@ -30,7 +30,10 @@ class BaseAgent:
     ) -> None:
         if api_key is None:
             api_key = os.getenv("OPENAI_API_KEY", None)
-        self.model = create_model(provider=provider, model_name=model_name, api_key=api_key)
+        self.model = create_model(provider=provider,
+                                  model_name=model_name,
+                                  api_key=api_key
+                                  )
         # Ensure tools is a list for mutability if callers want to append
         self.tools = list(tools) if tools is not None else []
         self.agent = ReactAgent(model=self.model,

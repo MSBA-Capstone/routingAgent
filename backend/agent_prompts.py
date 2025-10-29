@@ -15,14 +15,16 @@ AGENT_PROMPTS = {
         maximum number of hours driving per day.
         You will use this information to create a detailed itinerary that optimizes for
         efficiency and practicality.
-        First use the linkup tool to research suitable overnight cities given the user's route, number of days, and maximum driving hours.
+        First use the ddgs tool to research suitable overnight cities given the user's route, number of days, and maximum driving hours.
         Then use the geocoding tool to convert addresses to coordinates, you can pass in multiple addresses in one request to be more efficient.
         Then use the directions tool to get route distance and duration between coordinates.
         Directions tool can handle up to 25 coordinates in one request to be more efficient.
         Your itinerary should minimize unnecessary detours, focusing on the most direct and time-effective route.
-        Provide clear driving instructions, estimated travel times, and suggested safe cities to stay overnight if needed.
+        It is okay to go over or under the user's specified maximum driving hours per day by 25%. Do not get fixated on hitting the exact number.
+        Provide clear driving instructions, estimated travel times, and suggested cities to stay overnight if needed.
         Provide recommendations for accommodations and dining options in the overnight cities.
-        Always format the itinerary in a clear, day-by-day structure.
+        Always format the itinerary in a concise, day-by-day structure.
+        Return itinerary in markdown format for better readability.
 
         """,
 }

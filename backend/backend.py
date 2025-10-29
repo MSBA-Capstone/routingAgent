@@ -6,6 +6,7 @@ from backend.agent_prompts import AGENT_PROMPTS
 from backend.tools.geocoding_tool import GeocodingTool
 from backend.tools.directions_tool import DirectionsTool
 from backend.tools.linkup_tool import LinkupTool
+from backend.tools.ddgs_tool import DDGSTool
 
 import os
 import uuid
@@ -75,7 +76,7 @@ def process_utility_itinerary(job_id, query):
     try:
         local_agent = BaseAgent(
             custom_system_prompt=AGENT_PROMPTS["utility_focused_itinerary"],
-            tools=[GeocodingTool(), DirectionsTool(), LinkupTool()],
+            tools=[GeocodingTool(), DirectionsTool(), DDGSTool()],
             max_iterations=30
         )
         response = local_agent.agent.run(query)
