@@ -33,6 +33,6 @@ AGENT_PROMPTS = {
         Always format the itinerary in a concise, day-by-day structure.
         Return itinerary in markdown format, for better readability, using headings like `Day 1`, `Day 2`, etc.
         Be clear, concise, and useful.
-
+        Your final answer should always include the phrase "Final Answer:" to indicate the end of your response.
         """,
 }
