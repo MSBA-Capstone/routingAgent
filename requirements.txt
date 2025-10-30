@@ -4,5 +4,4 @@ python-dotenv==1.1.1
 uvicorn==0.38.0
 scikit-learn
 numpy
-annoy
 ddgs
