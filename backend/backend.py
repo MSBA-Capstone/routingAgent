@@ -1,22 +1,37 @@
 # agent_backend.py
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from backend.baseAgent import agent
+from backend.baseAgent import BaseAgent
+from backend.agent_prompts import AGENT_PROMPTS
+from backend.tools.geocoding_tool import GeocodingTool
+from backend.tools.directions_tool import DirectionsTool
+from backend.tools.linkup_tool import LinkupTool
+from backend.tools.ddgs_tool import DDGSTool
 
 import os
+import uuid
+from fastapi import BackgroundTasks
 
 app = FastAPI()
 
 # Allow CORS for frontend (adjust origins as needed)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://agent-pro-example.vercel.app"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://routing-agent.vercel.app", "https://routing-agent-ltgpw525m-haofei-zhangs-projects.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
 )
 
-# Agent initialized in backend/agent.py and imported above
+# Each API endpoint will create its own BaseAgent instance to avoid
+# sharing state between requests.
+
+# Global dict to store job statuses (in production, use a database)
+jobs = {}
+
+# Each API endpoint will create its own BaseAgent instance to avoid
+# sharing state between requests.
+
 
 @app.post("/validate_password")
 async def validate_password(request: Request):
@@ -29,33 +44,48 @@ async def validate_password(request: Request):
         return {"success": True}
     return {"success": False}
 
-@app.post("/query")
+@app.post("/init")
 async def run_query(request: Request):
     data = await request.json()
     userInput = data.get("query", "")
     history = data.get("history", [])
     query = f"User Input: {userInput}\nConversation History: {history}"
-    response = agent.run(query)
-    return {"answer": response.final_answer}
+    # create a fresh agent for this request
+    local_agent = BaseAgent(
+        custom_system_prompt=AGENT_PROMPTS["route_sanity_check"],
+        tools=[GeocodingTool(), DirectionsTool()],
+        max_iterations=10
+    )
+    response = local_agent.agent.run(query)
+    continue_flag = "The route is not feasible" not in response.final_answer
+    return {"answer": response.final_answer, "continue": continue_flag}
 
-# Endpoint to add a new cat fact and update RAG index
-@app.post("/add_fact")
-async def add_fact(request: Request):
+@app.post("/utility_itinerary")
+async def create_utility_itinerary(request: Request, background_tasks: BackgroundTasks):
     data = await request.json()
-    fact = data.get("fact", "").strip()
-    if not fact:
-        return {"success": False, "error": "No fact provided."}
-    # Append fact to cat-facts.txt
-    facts_path = os.path.join(os.path.dirname(__file__), "..", "RAG", "cat-facts.txt")
+    userInput = data.get("query", "")
+    history = data.get("history", [])
+    query = f"User Input: {userInput}\nConversation History: {history}"
+    # create a fresh agent for this request
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {"status": "processing", "result": None}
+    background_tasks.add_task(process_utility_itinerary, job_id, query)
+    return {"job_id": job_id}
+
+def process_utility_itinerary(job_id, query):
     try:
-        with open(facts_path, "a", encoding="utf-8") as f:
-            f.write(fact + "\n")
+        local_agent = BaseAgent(
+            custom_system_prompt=AGENT_PROMPTS["utility_focused_itinerary"],
+            tools=[GeocodingTool(), DirectionsTool(), DDGSTool()],
+            max_iterations=30
+        )
+        response = local_agent.agent.run(query)
+        jobs[job_id] = {"status": "completed", "result": {"answer": response.final_answer}}
     except Exception as e:
-        return {"success": False, "error": str(e)}
-    # Rebuild RAG index
-    try:
-        from RAG.ragInit import build_index
-        build_index()
-    except Exception as e:
-        return {"success": False, "error": "Fact added, but failed to rebuild index: " + str(e)}
-    return {"success": True, "message": "Fact added and RAG index updated."}
+        jobs[job_id] = {"status": "error", "result": str(e)}
+
+@app.get("/job_status/{job_id}")
+async def get_job_status(job_id: str):
+    if job_id not in jobs:
+        return {"status": "not_found"}
+    return jobs[job_id]
