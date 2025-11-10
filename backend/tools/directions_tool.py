@@ -34,9 +34,7 @@ class DirectionsTool(Tool):
         coordinates = ';'.join(f"{lon},{lat}" for lon, lat in coords_list)
         url = f"https://api.mapbox.com/directions/v5/{profile}/{coordinates}"
         params = {
-            "access_token": access_token,
-            "geometries": "geojson",  # Return GeoJSON geometry
-            "overview": "full"  # Full route geometry
+            "access_token": access_token
         }
         
         try:

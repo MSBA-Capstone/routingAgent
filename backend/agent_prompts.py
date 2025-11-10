@@ -23,6 +23,7 @@ AGENT_PROMPTS = {
         Then use the geocoding tool to convert addresses to coordinates, you can pass in multiple addresses in one request to be more efficient.
         Then use the directions tool to get route distance and duration between coordinates.
         Directions tool can handle up to 25 coordinates in one request to be more efficient.
+        IMPORTANT: When using the directions tool, include the COMPLETE response (including ROUTE_GEOMETRY data) in your Driving field so the frontend can display maps.
         Your itinerary should minimize unnecessary detours, focusing on the most direct and time-effective route.
         It is okay to go over the user's specified maximum driving hours per day by 10%. Do not get fixated on hitting the exact number.
         Likewise, it is also okay to drive less than the maximum driving hours.
@@ -32,10 +33,12 @@ AGENT_PROMPTS = {
         Provide recommendations for accommodations and dining options in the overnight cities.
 
         CRITICAL: Format your response using this exact structure:
+        Final Answer:
 
         DAY_SECTIONS:
         Day 1
         - Route: [from] → [to]
+        - Route Coordinates: [start_lon,start_lat;end_lon,end_lat]
         - Driving: [time] ([minutes] min), [distance] km
         - Start time suggestion: [time]
         - Notes: [brief notes]
@@ -56,8 +59,5 @@ AGENT_PROMPTS = {
         Notes
         - [additional notes]
         - [more notes]
-
-        Be clear, concise, and useful.
-        Your final answer should always include the phrase "Final Answer:" to indicate the end of your response.
         """,
 }

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import RouteMap from './RouteMap';
 
 const ItineraryDisplay = ({ content }) => {
   // Carousel state
@@ -120,6 +121,9 @@ const ItineraryDisplay = ({ content }) => {
       if (trimmed.startsWith('- Route:')) {
         currentSection = 'route';
         sections.route = trimmed.substring(9).trim(); // Remove "- Route: "
+      } else if (trimmed.startsWith('- Route Coordinates:')) {
+        currentSection = 'routeCoordinates';
+        sections.routeCoordinates = trimmed.substring(21).trim(); // Remove "- Route Coordinates: "
       } else if (trimmed.startsWith('- Driving:')) {
         currentSection = 'driving';
         sections.driving = trimmed.substring(11).trim(); // Remove "- Driving: "
@@ -161,12 +165,22 @@ const ItineraryDisplay = ({ content }) => {
     return (
       <div className="space-y-4">
         {parsed.route && (
-          <div className="flex items-start space-x-3">
-            <div className="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-            <div>
-              <span className="font-medium text-gray-900 dark:text-white">Route: </span>
-              <span className="text-gray-700 dark:text-gray-300">{parsed.route}</span>
+          <div className="space-y-3">
+            <div className="flex items-start space-x-3">
+              <div className="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+              <div>
+                <span className="font-medium text-gray-900 dark:text-white">Route: </span>
+                <span className="text-gray-700 dark:text-gray-300">{parsed.route}</span>
+              </div>
             </div>
+
+            {/* Route Map */}
+            {parsed.routeCoordinates && (
+              <RouteMap
+                routeCoordinates={parsed.routeCoordinates}
+                className="w-full"
+              />
+            )}
           </div>
         )}
 
