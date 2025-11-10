@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import './App.css';
+import toast, { Toaster } from 'react-hot-toast';
 
 import PasswordScreen from './components/PasswordScreen';
 import TripForm from './components/TripForm';
@@ -16,6 +17,11 @@ function App() {
   const handleFormSubmit = async (tripData) => {
     setLoading(true);
     setResult(null);
+    
+    toast.success('Planning your trip... This may take a few moments.', {
+      duration: 3000,
+    });
+    
     try {
       const res = await fetch(`${API_BASE_URL}/plan_trip`, {
         method: 'POST',
@@ -25,6 +31,7 @@ function App() {
       const data = await res.json();
 
       if (!data.feasible) {
+        toast.error('Route not feasible: ' + data.answer);
         setResult(data.answer);
         setLoading(false);
         return;
@@ -38,20 +45,24 @@ function App() {
           const statusData = await statusRes.json();
           if (statusData.status === "completed") {
             clearInterval(pollInterval);
+            toast.success('Trip itinerary generated successfully!');
             setResult(statusData.result.answer);
             setLoading(false);
           } else if (statusData.status === "error") {
             clearInterval(pollInterval);
+            toast.error('Error generating itinerary: ' + statusData.result);
             setResult('Error: ' + statusData.result);
             setLoading(false);
           }
         } catch (pollErr) {
           clearInterval(pollInterval);
+          toast.error('Connection error while generating itinerary');
           setResult('Error polling status: ' + pollErr.message);
           setLoading(false);
         }
       }, 2000);
     } catch (err) {
+      toast.error('Failed to start trip planning: ' + err.message);
       setResult('Error: ' + err.message);
       setLoading(false);
     }
@@ -68,6 +79,31 @@ function App() {
       <TripForm onSubmit={handleFormSubmit} loading={loading} />
 
       {result && <ItineraryDisplay content={result} />}
+      
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#363636',
+            color: '#fff',
+          },
+          success: {
+            duration: 3000,
+            theme: {
+              primary: '#10B981',
+              secondary: '#fff',
+            },
+          },
+          error: {
+            duration: 5000,
+            theme: {
+              primary: '#EF4444',
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
     </div>
   );
 }
