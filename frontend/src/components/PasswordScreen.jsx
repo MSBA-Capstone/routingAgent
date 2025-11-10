@@ -28,22 +28,26 @@ function PasswordScreen({ onSuccess, apiBaseUrl }) {
   };
 
   return (
-    <div className="app-container" style={{ maxWidth: 400, margin: '80px auto', padding: 24, background: 'var(--card-bg)', borderRadius: 12, boxShadow: 'var(--shadow)' }}>
-      <h2 style={{ textAlign: 'center', marginBottom: 16 }}>🔒 Enter Access Password</h2>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div className="max-w-md mx-auto my-20 p-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+      <h2 className="text-center mb-4 text-xl font-bold text-gray-900 dark:text-white">🔒 Enter Access Password</h2>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <input
           type="password"
           value={password}
           onChange={e => setPassword(e.target.value)}
           placeholder="Password"
-          style={{ padding: 10, fontSize: 16, borderRadius: 6, background: 'var(--input-bg)', color: 'var(--text)', border: '1px solid var(--input-border)' }}
+          className="px-3 py-2 text-lg rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
           disabled={loading}
         />
-        <button type="submit" disabled={loading || !password.trim()} style={{ padding: '10px 0', fontSize: 16, borderRadius: 6, background: '#1976d2', color: '#fff', border: 'none', cursor: 'pointer' }}>
+        <button
+          type="submit"
+          disabled={loading || !password.trim()}
+          className="py-2 text-lg rounded-md bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium transition-colors"
+        >
           {loading ? "Validating..." : "Enter"}
         </button>
       </form>
-      {error && <div style={{ textAlign: 'center', color: '#d32f2f', marginTop: 12 }}>{error}</div>}
+      {error && <div className="text-center text-red-600 dark:text-red-400 mt-3">{error}</div>}
     </div>
   );
 }

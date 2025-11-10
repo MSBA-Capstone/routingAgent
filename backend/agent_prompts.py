@@ -30,8 +30,33 @@ AGENT_PROMPTS = {
         Ensure that each day's driving time is reasonable, taking into account breaks and meal stops.
         Provide clear driving instructions, estimated travel times, and suggested cities to stay overnight if needed.
         Provide recommendations for accommodations and dining options in the overnight cities.
-        Always format the itinerary in a concise, day-by-day structure.
-        Return itinerary in markdown format, for better readability, using headings like `Day 1`, `Day 2`, etc.
+
+        CRITICAL: Format your response using this exact structure:
+
+        DAY_SECTIONS:
+        Day 1
+        - Route: [from] → [to]
+        - Driving: [time] ([minutes] min), [distance] km
+        - Start time suggestion: [time]
+        - Notes: [brief notes]
+        - Overnight: [city]
+          - Accommodation options: [details]
+          - Dining options: [details]
+          - Why [city]: [reason]
+
+        Day 2
+        [same format as Day 1]
+
+        SUMMARY_SECTIONS:
+        Estimated total trip driving time
+        - Leg 1: [details]
+        - Leg 2: [details]
+        - Total: [total time]
+
+        Notes
+        - [additional notes]
+        - [more notes]
+
         Be clear, concise, and useful.
         Your final answer should always include the phrase "Final Answer:" to indicate the end of your response.
         """,

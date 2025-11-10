@@ -44,21 +44,21 @@ async def validate_password(request: Request):
         return {"success": True}
     return {"success": False}
 
-@app.post("/init")
-async def run_query(request: Request):
-    data = await request.json()
-    userInput = data.get("query", "")
-    history = data.get("history", [])
-    query = f"User Input: {userInput}\nConversation History: {history}"
-    # create a fresh agent for this request
-    local_agent = BaseAgent(
-        custom_system_prompt=AGENT_PROMPTS["route_sanity_check"],
-        tools=[GeocodingTool(), DirectionsTool()],
-        max_iterations=10
-    )
-    response = local_agent.agent.run(query)
-    continue_flag = "The route is not feasible" not in response.final_answer
-    return {"answer": response.final_answer, "continue": continue_flag}
+# @app.post("/init")
+# async def run_query(request: Request):
+#     data = await request.json()
+#     userInput = data.get("query", "")
+#     history = data.get("history", [])
+#     query = f"User Input: {userInput}\nConversation History: {history}"
+#     # create a fresh agent for this request
+#     local_agent = BaseAgent(
+#         custom_system_prompt=AGENT_PROMPTS["route_sanity_check"],
+#         tools=[GeocodingTool(), DirectionsTool()],
+#         max_iterations=10
+#     )
+#     response = local_agent.agent.run(query)
+#     continue_flag = "The route is not feasible" not in response.final_answer
+#     return {"answer": response.final_answer, "continue": continue_flag}
 
 @app.post("/utility_itinerary")
 async def create_utility_itinerary(request: Request, background_tasks: BackgroundTasks):
@@ -71,6 +71,34 @@ async def create_utility_itinerary(request: Request, background_tasks: Backgroun
     jobs[job_id] = {"status": "processing", "result": None}
     background_tasks.add_task(process_utility_itinerary, job_id, query)
     return {"job_id": job_id}
+
+@app.post("/plan_trip")
+async def plan_trip(request: Request, background_tasks: BackgroundTasks):
+    data = await request.json()
+    trip_data = data.get("trip", {})
+    from_loc = trip_data.get("from", "")
+    to_loc = trip_data.get("to", "")
+    duration = trip_data.get("duration", "")
+    driving_hours = trip_data.get("drivingHoursPerDay", "")
+    hurry = trip_data.get("routePreference", "")
+
+    # First, run sanity check
+    sanity_query = f"I am planning a road trip from {from_loc} to {to_loc}. The trip will last {duration} days, and I plan to drive about {driving_hours} hours each day. Please provide any additional notes or context that would help in planning this route."
+    local_agent = BaseAgent(
+        custom_system_prompt=AGENT_PROMPTS["route_sanity_check"],
+        tools=[GeocodingTool(), DirectionsTool()],
+        max_iterations=10
+    )
+    sanity_response = local_agent.agent.run(sanity_query)
+    if "The route is not feasible" in sanity_response.final_answer:
+        return {"answer": sanity_response.final_answer, "feasible": False}
+
+    # If feasible, create itinerary
+    itinerary_query = f"I am planning a road trip from {from_loc} to {to_loc}. The trip will last {duration} days, and I plan to drive about {driving_hours} hours each day. Regarding hurry: {hurry}."
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {"status": "processing", "result": None}
+    background_tasks.add_task(process_utility_itinerary, job_id, itinerary_query)
+    return {"job_id": job_id, "feasible": True}
 
 def process_utility_itinerary(job_id, query):
     try:
