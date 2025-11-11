@@ -7,8 +7,11 @@ const TripForm = ({ onSubmit, loading }) => {
     to: '',
     duration: '',
     drivingHoursPerDay: '',
-    routePreference: ''
+    routePreference: '',
+    preferences: []
   });
+
+  const preferences = ['Natural Scenery', 'Foodie', 'Culture', 'City'];
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -16,6 +19,15 @@ const TripForm = ({ onSubmit, loading }) => {
       ...prev,
       [name]: value
     }));
+  };
+
+  const handlePreferenceChange = (preference) => {
+    setFormData(prev => {
+      const newPreferences = prev.preferences.includes(preference)
+        ? prev.preferences.filter(p => p !== preference)
+        : [...prev.preferences, preference];
+      return { ...prev, preferences: newPreferences };
+    });
   };
 
   const handleSubmit = (e) => {
@@ -44,6 +56,11 @@ const TripForm = ({ onSubmit, loading }) => {
     
     if (!formData.routePreference) {
       toast.error('Please select your route preference');
+      return;
+    }
+    
+    if (formData.routePreference === 'No' && formData.preferences.length === 0) {
+      toast.error('Please select at least one preference');
       return;
     }
     
@@ -151,6 +168,31 @@ const TripForm = ({ onSubmit, loading }) => {
           </label>
         </div>
       </div>
+
+      {formData.routePreference === 'No' && (
+        <div>
+          <label className="block mb-3 font-semibold text-gray-900 dark:text-white">
+            Select your preferences (at least one):
+          </label>
+          <div className="flex flex-wrap gap-3">
+            {preferences.map(pref => (
+              <label key={pref} className={`flex-1 min-w-[150px] flex items-center justify-center p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                formData.preferences.includes(pref)
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                  : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500'
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={formData.preferences.includes(pref)}
+                  onChange={() => handlePreferenceChange(pref)}
+                  className="sr-only"
+                />
+                <span className="font-medium">{pref}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       <button
         type="submit"

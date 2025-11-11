@@ -23,7 +23,8 @@ function App() {
     });
     
     try {
-      const res = await fetch(`${API_BASE_URL}/plan_trip`, {
+      const endpoint = tripData.routePreference === 'No' ? '/plan_relaxed_trip' : '/plan_trip';
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trip: tripData }),

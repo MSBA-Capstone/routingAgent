@@ -4,6 +4,7 @@ import RouteMap from './RouteMap';
 const ItineraryDisplay = ({ content }) => {
   // Carousel state
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
+  const [currentPOIIndex, setCurrentPOIIndex] = useState(0);
 
   // Check if this is an itinerary (contains "Day" headers) or just a message
   const isItinerary = content.includes('Day ') && (
@@ -14,6 +15,42 @@ const ItineraryDisplay = ({ content }) => {
     content.includes('DAY_SECTIONS:') ||
     content.includes('SUMMARY_SECTIONS:')
   );
+
+  // Parse attractions array into array of POI objects
+  const parseAttractions = (attractionsArray) => {
+    if (!attractionsArray || !Array.isArray(attractionsArray)) {
+      console.log('parseAttractions: input is not an array or is empty');
+      return [];
+    }
+
+    const pois = [];
+
+    for (const item of attractionsArray) {
+      // Match pattern: Name (lon,lat): description
+      const match = item.trim().match(/^([^()]+)\s*\(([^)]+)\):\s*(.+)$/);
+      if (match) {
+        const [, name, coords, description] = match;
+        const [lon, lat] = coords.split(',').map(Number);
+        
+        // Validate coordinates
+        if (isNaN(lon) || isNaN(lat) || lon < -180 || lon > 180 || lat < -90 || lat > 90) {
+          console.log('parseAttractions: invalid coordinates for POI:', { name, lon, lat });
+          continue; // Skip this POI
+        }
+        
+        const poi = {
+          name: name.trim(),
+          coordinates: [lat, lon], // Leaflet uses [lat, lng]
+          description: description.trim()
+        };
+        pois.push(poi);
+      } else {
+        console.log('parseAttractions: no match for item:', item);
+      }
+    }
+
+    return pois;
+  };
 
   if (!isItinerary) {
     // Just display as a regular message
@@ -130,6 +167,14 @@ const ItineraryDisplay = ({ content }) => {
       } else if (trimmed.startsWith('- Start time suggestion:')) {
         currentSection = 'startTime';
         sections.startTime = trimmed.substring(24).trim(); // Remove "- Start time suggestion: "
+      } else if (trimmed.startsWith('- Attractions & Points of Interest:')) {
+        currentSection = 'attractions';
+        sections.attractions = [];
+        // The attractions section may have content on the same line or following lines
+        const sameLineContent = trimmed.substring(35).trim();
+        if (sameLineContent) {
+          sections.attractions.push(sameLineContent);
+        }
       } else if (trimmed.startsWith('- Notes:')) {
         currentSection = 'notes';
         sections.notes = trimmed.substring(9).trim(); // Remove "- Notes: "
@@ -140,11 +185,10 @@ const ItineraryDisplay = ({ content }) => {
           details: []
         };
         currentSubItems = sections.overnight.details;
-      } else if ((trimmed.startsWith('  - ') || 
-                 (trimmed.startsWith('- ') && 
-                  (trimmed.includes('Accommodation options:') || 
-                   trimmed.includes('Dining options:') || 
-                   trimmed.includes('Why ')))) && currentSection === 'overnight') {
+      } else if ((trimmed.startsWith('  - ') || trimmed.startsWith('- ')) && currentSection === 'attractions') {
+        // Attraction item
+        const attractionPrefix = trimmed.startsWith('  - ') ? '  - ' : '- ';
+        sections.attractions.push(trimmed.substring(attractionPrefix.length).trim());
         // Sub-item under overnight - handle accommodation, dining, and why details
         const prefix = trimmed.startsWith('  - ') ? '  - ' : '- ';
         currentSubItems.push(trimmed.substring(prefix.length).trim());
@@ -161,7 +205,10 @@ const ItineraryDisplay = ({ content }) => {
   // Render structured day content
   const renderDayContent = (content) => {
     const parsed = parseDayContent(content);
-
+    const pois = parseAttractions(parsed.attractions);
+    console.log('ItineraryDisplay Debug - parsed.attractions:', parsed.attractions);
+    console.log('ItineraryDisplay Debug - pois:', pois);
+    console.log('ItineraryDisplay Debug:', { parsed, pois });
     return (
       <div className="space-y-4">
         {parsed.route && (
@@ -174,12 +221,83 @@ const ItineraryDisplay = ({ content }) => {
               </div>
             </div>
 
+            {/* POI Navigation Controls - positioned under day selector */}
+            {pois.length > 1 && (
+              <div className="flex items-center justify-center space-x-4 py-2">
+                <button
+                  onClick={() => setCurrentPOIIndex(currentPOIIndex === 0 ? pois.length - 1 : currentPOIIndex - 1)}
+                  className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  title="Previous POI"
+                >
+                  <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[80px] text-center">
+                  Stop {currentPOIIndex + 1} of {pois.length}
+                </span>
+                
+                <button
+                  onClick={() => setCurrentPOIIndex((currentPOIIndex + 1) % pois.length)}
+                  className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  title="Next POI"
+                >
+                  <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
             {/* Route Map */}
             {parsed.routeCoordinates && (
-              <RouteMap
-                routeCoordinates={parsed.routeCoordinates}
-                className="w-full"
-              />
+              <>
+                {/* POI Navigation Controls */}
+                {pois.length > 1 && (
+                  <div className="flex items-center justify-center mb-3">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 flex items-center space-x-2">
+                      <button
+                        onClick={() => {
+                          const prevIndex = currentPOIIndex === 0 ? pois.length - 1 : currentPOIIndex - 1;
+                          setCurrentPOIIndex(prevIndex);
+                        }}
+                        className="p-1 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        title="Previous POI"
+                      >
+                        <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[60px] text-center">
+                        {currentPOIIndex + 1} / {pois.length}
+                      </span>
+                      
+                      <button
+                        onClick={() => {
+                          const nextIndex = (currentPOIIndex + 1) % pois.length;
+                          setCurrentPOIIndex(nextIndex);
+                        }}
+                        className="p-1 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        title="Next POI"
+                      >
+                        <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                <RouteMap
+                  routeCoordinates={parsed.routeCoordinates}
+                  pois={pois}
+                  currentPOIIndex={currentPOIIndex}
+                  onPOIChange={setCurrentPOIIndex}
+                  className="w-full"
+                />
+              </>
             )}
           </div>
         )}
@@ -210,6 +328,27 @@ const ItineraryDisplay = ({ content }) => {
             <div>
               <span className="font-medium text-gray-900 dark:text-white">Notes: </span>
               <span className="text-gray-700 dark:text-gray-300">{parsed.notes}</span>
+            </div>
+          </div>
+        )}
+
+        {pois.length > 0 && (
+          <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
+            <div className="flex items-start space-x-3 mb-2">
+              <div className="flex-shrink-0 w-2 h-2 bg-green-500 rounded-full mt-2"></div>
+              <div>
+                <span className="font-medium text-gray-900 dark:text-white">Attractions & Points of Interest</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {pois.map((poi, index) => (
+                <div key={index} className="ml-5">
+                  <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">📍 {poi.name}</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 ml-4">
+                    {poi.description}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -347,14 +486,17 @@ const ItineraryDisplay = ({ content }) => {
   // Navigation functions
   const goToPrevious = () => {
     setCurrentDayIndex((prevIndex) => (prevIndex - 1 + daySections.length) % daySections.length);
+    setCurrentPOIIndex(0); // Reset POI index when changing days
   };
 
   const goToNext = () => {
     setCurrentDayIndex((prevIndex) => (prevIndex + 1) % daySections.length);
+    setCurrentPOIIndex(0); // Reset POI index when changing days
   };
 
   const goToDay = (index) => {
     setCurrentDayIndex(index);
+    setCurrentPOIIndex(0); // Reset POI index when changing days
   };
 
   return (
