@@ -2,8 +2,7 @@
 
 ## Hosted Version
 
-This app is hosted on Vercel: [Live App](https://agent-pro-example.vercel.app/)
-
+This app is hosted on Vercel: [Live App](https://routing-agent.vercel.app/)
 
 ## Features
 
