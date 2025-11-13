@@ -1,121 +1,125 @@
-# AgentProExample
+# AI Roadtrip Planner
 
 ## Hosted Version
-This app is hosted on Vercel https://agent-pro-example.vercel.app/
+
+This app is hosted on Vercel: [Live App](https://agent-pro-example.vercel.app/)
+
 
 ## Features
 
-- **Cat RAG Chat**: Ask questions about cats and get answers powered by a local Retrieval-Augmented Generation (RAG) system built on your own cat facts.
-- **Add Your Own Cat Facts**: Users can submit new cat facts through the frontend, which are instantly added to the knowledge base and indexed for future queries.
-- **Random Cat Images**: Each chat session displays a random cat image fetched from The Cat API for a fun, engaging experience.
+* Route feasibility checker based on time and distance constraints
+* Utility-focused/  itinerary generator with day-by-day plans
+* Agent prompt system for multiple task types
+* Integrated geocoding and directions tools
+* Frontend and backend integration using React and FastAPI
 
 ## Project Structure
 
 ```
 finalProject/
 │
-├── backend/         # FastAPI backend server and custom tools
-│   ├── backend.py   # Main backend API entrypoint
-│   └── rag_tool.py  # Custom RAG tool for cat facts
+├── backend/             # FastAPI backend and agent logic
+│   ├── backend.py           # Main API entrypoint
+│   ├── agent_prompts.py     # Prompt templates for agents
+│   ├── baseAgent.py         # (Possibly legacy) base class for agent
+│   ├── tools/               # AI tool wrappers
+│       ├── ddgs_tool.py         # DuckDuckGo search
+│       ├── directions_tool.py   # Route calculation
+│       ├── geocoding_tool.py    # Address to coordinate
+│       ├── linkup_tool.py       # Tool coordination
+│       ├── rag_tool.py          # (Deprecated) RAG functionality
 │
-├── frontend/        # React frontend (Vite)
-│   ├── src/         # React source code
-│   └── ...          # Static files, configs, etc.
+├── frontend/            # React app (Vite + Tailwind)
+│   ├── src/                  # React source code
+│   ├── public/               # Static assets
+│   ├── index.html
+│   ├── package.json
+│   ├── tailwind.config.js
+│   ├── vite.config.js
+│   └── ...
 │
-├── RAG/             # RAG index builder and data
-│   ├── ragInit.py   # Script to build/update FAISS index
-│   └── cat-facts.txt# Cat facts data file
+├── RAG/                 # (Deprecated) RAG setup scripts
+│   ├── ragInit.py           # Build FAISS index
+│   └── cat-facts.txt        # RAG functionality testing text data
 │
-├── .gitignore       # Git ignore rules
-├── README.md        # Project documentation
-└── ...              # Other project files
+├── requirements.txt     # Python dependencies
+├── agent.ipynb          # Jupyter notebook (dev)
+├── README.md            # Project documentation
+└── ...
 ```
-
-
-## Environment Variables (.env File)
-
-Some parts of this project require configuration via a `.env` file. This file should be placed in the project root (next to `backend/`, `frontend/`, and `RAG/`).
-
-**Example `.env` file:**
-
-```
-OPENAI_API_KEY=your_openai_key_here
-APP_PASSWORD=your_app_password
-```
-
-**Notes:**
-- Do **not** commit your `.env` file to version control. It is included in `.gitignore` by default.
-- If you add new environment variables, make sure to update your `.env` file accordingly.
 
 ## Local Setup Instructions
 
 ### Requirements
 
-- **Python:** 3.10 or newer (recommended: 3.13)
-- **Node.js:** 18.x or newer (recommended: 22.x) [Tip: use nvm to manage multiple versions of Node]
+* Python 3.10+
+* Node.js 18+
 
-Make sure you have both Python and Node.js installed before proceeding with backend and frontend setup.
+---
 
-### RAG Setup
+## Backend Setup
 
-1. **Install Python dependencies**
+1. Create and activate a conda env:
 
-	Navigate to the project root and install required packages (you should use a virtual environment):
+```bash
+conda create -n roadtrip python=3.10
+conda activate roadtrip
+```
 
-	```bash
-	pip install -r requirements.txt
-	```
+2. Install backend dependencies:
 
-    This is probably the hardest part lol, reach out to Jack if you're having troubles
+```bash
+pip install -r requirements.txt
+```
 
-2. **Prepare your cat facts data**
+3. Start the backend:
 
-	- Edit or add facts to `RAG/cat-facts.txt` (one fact per line).
+```bash
+cd backend
+uvicorn backend:app --reload
+```
 
-3. **Build the RAG index**
+Visit: `http://localhost:8000`
 
-	From the project root, run:
+---
 
-	```bash
-	python RAG/ragInit.py
-	```
+## Frontend Setup
 
-	This should create or update the FAISS index in `RAG/faiss_index/`.
+1. Navigate to the frontend folder:
 
-    ### Backend Setup
+```bash
+cd frontend
+```
 
-1. **Install backend dependencies**
+2. Install dependencies:
 
-	All backend packages should be already installed
+```bash
+npm install
+```
 
-2. **Start the backend server**
+3. Run the dev server:
 
-	From the project root, run:
+```bash
+npm run dev
+```
 
-	```bash
-	uvicorn backend.backend:app --reload
-	```
+Visit: `http://localhost:5173`
 
-	The backend will be available at `http://localhost:8000`.
+---
 
+## Notes
 
-    ### Frontend Setup
+* Environment variables can be set via `.env` file (if needed)
+* Backend and frontend run independently in dev mode
+* RAG components are currently deprecated
 
-1. **Install frontend dependencies**
+---
 
-	From the `frontend` directory:
+## Status
 
-	```bash
-	cd frontend
-	npm install
-	```
+Active development — frontend recently revamped, backend agents stable, older RAG logic deprecated.
 
-2. **Start the frontend dev server**
+## Maintainers
 
-	Still in the `frontend` directory, run:
-
-	```bash
-	npm run dev
-	```
-
-	The frontend will be available at `http://localhost:5173` by default.
+AI dev – core logic
+Data engineer – README, testing, & support
